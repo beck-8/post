@@ -21,31 +21,20 @@ func Benchmark_CTR(b *testing.B) {
 		log.Fatal(err)
 	}
 
-	chans := make([]chan struct{}, 0, runtime.NumCPU())
-	for i := 0; i < runtime.NumCPU(); i++ {
-		ch := make(chan struct{})
-		chans = append(chans, ch)
-	}
-
 	b.StartTimer()
-	for i := 0; i < runtime.NumCPU(); i++ {
-		go func(i int) {
-			out := make([]byte, c.BlockSize())
-			in := make([]byte, c.BlockSize())
-			ctrHash(c, chans[i], out, in, (1<<30)*(i-1), (1<<30)*i-1)
-			_ = out
-		}(i)
-	}
+	b.SetBytes((1 << 30))
 
-	for _, ch := range chans {
-		<-ch
-	}
+	out := make([]byte, c.BlockSize())
+	in := make([]byte, c.BlockSize())
+	ctrHash(c, out, in, 0, (1 << 30))
+	_ = out
+
 	b.StopTimer()
 
 	b.Log("calculated", 1<<30*runtime.NumCPU(), "hashes")
 }
 
-func ctrHash(c cipher.Block, ch chan struct{}, out, in []byte, start, end int) chan struct{} {
+func ctrHash(c cipher.Block, out, in []byte, start, end int) {
 	iv := make([]byte, c.BlockSize())
 	binary.BigEndian.PutUint64(iv[:8], uint64(start))
 	ctr := cipher.NewCTR(c, iv)
@@ -54,8 +43,6 @@ func ctrHash(c cipher.Block, ch chan struct{}, out, in []byte, start, end int) c
 		binary.BigEndian.PutUint64(in[:8], uint64(i)) // the label in our case just one byte (unless we change it)
 		ctr.XORKeyStream(out, in)
 	}
-	close(ch)
-	return ch
 }
 
 func Benchmark_Sha(b *testing.B) {
