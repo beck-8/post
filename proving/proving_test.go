@@ -397,7 +397,10 @@ func BenchmarkNewProving(b *testing.B) {
 		prover newProver
 		size   int
 	}{
-		{"Blake3", workNewBlake, 256 * MiB},
+		{"Blake3 with d=34", workNewBlake, 256 * MiB},
+		{"Blake3 with d=34, single invocation", workNewBlakeD34BiggerOutSize, 256 * MiB},
+		{"Blake3 with d=40, single invocation", workNewBlakeD40, 256 * MiB},
+		{"AES", workNewAES, 256 * MiB},
 	}
 
 	for _, test := range tests {
