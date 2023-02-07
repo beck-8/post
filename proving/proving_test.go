@@ -402,6 +402,8 @@ func BenchmarkNewProving(b *testing.B) {
 		{"Blake3 with d=40, single invocation", workNewBlakeD40, 256 * MiB},
 		{"AES", workNewAESD34, 256 * MiB},
 		{"AES with d=40", workNewAESD40, 256 * MiB},
+		{"SipHash", workNewSiphashD34, 256 * MiB},
+		{"SipHash with d=40", workNewSiphashD40, 256 * MiB},
 	}
 
 	for _, test := range tests {

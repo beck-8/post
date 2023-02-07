@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 
+	"github.com/dchest/siphash"
 	"github.com/zeebo/blake3"
 )
 
@@ -245,6 +246,81 @@ func workNewAESD40(ctx context.Context, data <-chan *batch, reporter IndexReport
 
 			for i := uint8(0); i < numOuts; i++ {
 				ciphers[i].Encrypt(out[i*blockSize:(i+1)*blockSize], block)
+			}
+
+			for j := 0; j < numNonces; j++ {
+				if le40(out[j*d/8:]) <= difficultyVal {
+					if stop := reporter.Report(ctx, uint32(j), index); stop {
+						batch.Release()
+						return
+					}
+				}
+			}
+			index++
+		}
+		batch.Release()
+	}
+}
+
+// SipHash with D=34, 11 hash invocations
+func workNewSiphashD34(ctx context.Context, data <-chan *batch, reporter IndexReporterNew, ch Challenge, difficulty []byte) {
+	const m = 64
+	const blockSize = m / 8
+	const d = 34
+	numOuts := uint8(math.Ceil(float64(numNonces*d) / m))
+	difficultyVal := le34(difficulty, 0)
+
+	key0 := siphash.New(ch).Sum64()
+	out := make([]byte, 0, numOuts*blockSize)
+
+	for batch := range data {
+		index := batch.Index
+		labels := batch.Data
+		for len(labels) > 0 {
+			block := labels[:B]
+			labels = labels[B:]
+			out = out[:0]
+			for i := uint64(0); i < uint64(numOuts); i++ {
+				value := siphash.Hash(key0, i, block)
+				out = binary.LittleEndian.AppendUint64(out, value)
+			}
+
+			for j := uint(0); j < numNonces; j++ {
+				val := le34(out, j*d)
+				if val <= difficultyVal {
+					if stop := reporter.Report(ctx, uint32(j), index); stop {
+						batch.Release()
+						return
+					}
+				}
+			}
+			index++
+		}
+		batch.Release()
+	}
+}
+
+// SipHash with D=40, 13 hash invocations
+func workNewSiphashD40(ctx context.Context, data <-chan *batch, reporter IndexReporterNew, ch Challenge, difficulty []byte) {
+	const m = 64
+	const blockSize = m / 8
+	const d = 40
+	numOuts := uint8(math.Ceil(float64(numNonces*d) / m))
+	difficultyVal := le34(difficulty, 0)
+
+	key0 := siphash.New(ch).Sum64()
+	out := make([]byte, 0, numOuts*blockSize)
+
+	for batch := range data {
+		index := batch.Index
+		labels := batch.Data
+		for len(labels) > 0 {
+			block := labels[:B]
+			labels = labels[B:]
+			out = out[:0]
+			for i := uint64(0); i < uint64(numOuts); i++ {
+				value := siphash.Hash(key0, i, block)
+				out = binary.LittleEndian.AppendUint64(out, value)
 			}
 
 			for j := 0; j < numNonces; j++ {
