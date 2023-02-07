@@ -3,6 +3,7 @@ package proving
 import (
 	"context"
 	"crypto/aes"
+	"crypto/cipher"
 	"encoding/binary"
 	"log"
 	"math"
@@ -160,19 +161,79 @@ func workNewBlakeD34BiggerOutSize(ctx context.Context, data <-chan *batch, repor
 	}
 }
 
-func workNewAES(ctx context.Context, data <-chan *batch, reporter IndexReporterNew, ch Challenge, difficulty []byte) {
-	const m = 128 // AES output size in bits
-	const blockSize = m / 8
-	// d: |d| = log2(N) - log2(B). Assumed both N and B are power of 2.
-	const dd = 34
-	// numOuts = ceil(numNonces * |d| / m )
-	numOuts := uint8(math.Ceil(float64(numNonces*dd) / m))
+// Create a set of AES block ciphers.
+// A cipher is created using an idx encrypted with challenge:
+// cipher[i] = AES(ch).Encrypt(i)
+func createAesCiphers(ch Challenge, count uint8) (ciphers []cipher.Block) {
+	// a temporary cipher used only to create keys.
+	keyCipher, err := aes.NewCipher(ch)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	keyBuffer := make([]byte, aes.BlockSize)
+	key := make([]byte, aes.BlockSize)
+
+	for i := byte(0); i < count; i++ {
+		keyBuffer[0] = i
+		keyCipher.Encrypt(key, keyBuffer)
+		c, err := aes.NewCipher(key)
+		if err != nil {
+			log.Panic(err)
+		}
+		ciphers = append(ciphers, c)
+	}
+	return ciphers
+}
+
+// AES with D=34, 6 hash invocations
+func workNewAESD34(ctx context.Context, data <-chan *batch, reporter IndexReporterNew, ch Challenge, difficulty []byte) {
+	const m = aes.BlockSize * 8
+	const blockSize = aes.BlockSize
+	const d = 34
+	numOuts := uint8(math.Ceil(float64(numNonces*d) / m))
 	difficultyVal := le34(difficulty, 0)
 
-	c, err := aes.NewCipher(ch)
-	if err != nil {
-		log.Fatal(err)
+	ciphers := createAesCiphers(ch, numOuts)
+	out := make([]byte, numOuts*blockSize)
+
+	for batch := range data {
+		index := batch.Index
+		labels := batch.Data
+
+		for len(labels) > 0 {
+			block := labels[:B]
+			labels = labels[B:]
+
+			for i := uint8(0); i < numOuts; i++ {
+				ciphers[i].Encrypt(out[i*blockSize:(i+1)*blockSize], block)
+			}
+
+			for j := uint(0); j < numNonces; j++ {
+				val := le34(out, j*d)
+				if val <= difficultyVal {
+					if stop := reporter.Report(ctx, uint32(j), index); stop {
+						batch.Release()
+						return
+					}
+				}
+			}
+			index++
+		}
+		batch.Release()
 	}
+}
+
+// AES with D=40, 7 hash invocations
+func workNewAESD40(ctx context.Context, data <-chan *batch, reporter IndexReporterNew, ch Challenge, difficulty []byte) {
+	const m = aes.BlockSize * 8
+	const blockSize = aes.BlockSize
+	const d = 40
+
+	numOuts := uint8(math.Ceil(float64(numNonces*d) / m))
+	difficultyVal := le34(difficulty, 0)
+
+	ciphers := createAesCiphers(ch, numOuts)
 	out := make([]byte, numOuts*blockSize)
 
 	for batch := range data {
@@ -183,12 +244,11 @@ func workNewAES(ctx context.Context, data <-chan *batch, reporter IndexReporterN
 			labels = labels[B:]
 
 			for i := uint8(0); i < numOuts; i++ {
-				c.Encrypt(out[i*blockSize:(i+1)*blockSize], block)
+				ciphers[i].Encrypt(out[i*blockSize:(i+1)*blockSize], block)
 			}
 
-			for j := uint(0); j < numNonces; j++ {
-				val := le34(out, j*dd)
-				if val <= difficultyVal {
+			for j := 0; j < numNonces; j++ {
+				if le40(out[j*d/8:]) <= difficultyVal {
 					if stop := reporter.Report(ctx, uint32(j), index); stop {
 						batch.Release()
 						return
