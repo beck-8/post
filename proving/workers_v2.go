@@ -61,7 +61,6 @@ func workNewBlakeD40(ctx context.Context, data <-chan *batch, reporter IndexRepo
 				h.Reset()
 				h.Write(ch)
 				h.Write(block)
-				h.Write([]byte{0})
 				d := h.Digest()
 				d.Read(out) // streams variable length output
 			}
@@ -142,7 +141,6 @@ func workNewBlakeD34BiggerOutSize(ctx context.Context, data <-chan *batch, repor
 				h.Reset()
 				h.Write(ch)
 				h.Write(block)
-				h.Write([]byte{0})
 				d := h.Digest()
 				d.Read(out)
 			}
