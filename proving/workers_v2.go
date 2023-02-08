@@ -28,13 +28,21 @@ func le40(b []byte) uint64 {
 
 // Get an uint64 that consists of 34 bits from the data slice starting from bit i.
 func le34(data []byte, i uint) uint64 {
-	if int(i) > (len(data)*8)-34 {
-		log.Panicf("index is out of range (%d > %d)", i, (len(data)*8)-34)
-	}
 	b := data[i/8 : (i/8)+5]
 	x := binary.LittleEndian.Uint32(b)
 	// Combine the two values into an uint64
 	z := uint64(x) | uint64(b[4])<<32
+	// Shift the result to the right by the remaining bits
+	z = z >> (i % 8)
+	// Return the 34 bits from the data slice
+	return z & 0x3FFFFFFFFFFFF
+}
+
+// Get an uint64 that consists of 34 bits from the data slice starting from bit i.
+// SAFETY: Assumes len(data) >= (i/8)+8.
+func le34Faster(data []byte, i uint) uint64 {
+	b := data[i/8 : (i/8)+8]
+	z := binary.LittleEndian.Uint64(b)
 	// Shift the result to the right by the remaining bits
 	z = z >> (i % 8)
 	// Return the 34 bits from the data slice
@@ -105,7 +113,7 @@ func workNewBlake(ctx context.Context, data <-chan *batch, reporter IndexReporte
 			}
 
 			for j := uint(0); j < numNonces; j++ {
-				val := le34(out, j*d)
+				val := le34Faster(out, j*d)
 				if val <= difficultyVal {
 					if stop := reporter.Report(ctx, uint32(j), index); stop {
 						batch.Release()
@@ -146,7 +154,7 @@ func workNewBlakeD34BiggerOutSize(ctx context.Context, data <-chan *batch, repor
 			}
 
 			for j := uint(0); j < numNonces; j++ {
-				val := le34(out, j*d)
+				val := le34Faster(out, j*d)
 				if val <= difficultyVal {
 					if stop := reporter.Report(ctx, uint32(j), index); stop {
 						batch.Release()
@@ -209,7 +217,7 @@ func workNewAESD34(ctx context.Context, data <-chan *batch, reporter IndexReport
 			}
 
 			for j := uint(0); j < numNonces; j++ {
-				val := le34(out, j*d)
+				val := le34Faster(out, j*d)
 				if val <= difficultyVal {
 					if stop := reporter.Report(ctx, uint32(j), index); stop {
 						batch.Release()
@@ -284,7 +292,7 @@ func workNewSiphashD34(ctx context.Context, data <-chan *batch, reporter IndexRe
 			}
 
 			for j := uint(0); j < numNonces; j++ {
-				val := le34(out, j*d)
+				val := le34Faster(out, j*d)
 				if val <= difficultyVal {
 					if stop := reporter.Report(ctx, uint32(j), index); stop {
 						batch.Release()
