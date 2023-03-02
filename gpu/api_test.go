@@ -42,12 +42,12 @@ func TestScryptPositions(t *testing.T) {
 	providers := Providers()
 	var prevOutput []byte
 	for _, p := range providers {
-		hashLenBits := uint32(4)
+		hashLenBits := uint32(8)
 		res, err := ScryptPositions(
 			WithComputeProviderID(p.ID),
 			WithCommitment(commitment),
 			WithSalt(salt),
-			WithStartAndEndPosition(1, 1<<8),
+			WithStartAndEndPosition(0, 15),
 			WithBitsPerLabel(hashLenBits),
 		)
 		r.NoError(err)
@@ -62,6 +62,33 @@ func TestScryptPositions(t *testing.T) {
 			prevOutput = res.Output
 		} else {
 			r.Equal(prevOutput, res.Output, fmt.Sprintf("not equal: provider: %+v, hashLenBits: %v", p, hashLenBits))
+		}
+	}
+}
+
+func BenchmarkScryptPositions(b *testing.B) {
+	r := require.New(b)
+
+	numLabels := uint32(1000000)
+
+	for _, p := range Providers() {
+		for _, labelSize := range []uint32{8, 32, 64, 128, 256} {
+			b.Run(fmt.Sprintf("provider:%+v/labelsize:%d\n", p, labelSize), func(b *testing.B) {
+				b.SetBytes(int64(labelSize / 8 * numLabels))
+				for i := 0; i < b.N; i++ {
+					res, err := ScryptPositions(
+						WithComputeProviderID(p.ID),
+						WithCommitment(commitment),
+						WithSalt(salt),
+						WithStartAndEndPosition(0, uint64(numLabels-1)),
+						WithBitsPerLabel(labelSize),
+					)
+					r.NoError(err)
+					r.NotNil(res)
+					r.NotNil(res.Output)
+					r.False(res.Stopped)
+				}
+			})
 		}
 	}
 }
