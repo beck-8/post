@@ -76,6 +76,8 @@ func BenchmarkScryptPositions(b *testing.B) {
 			b.Run(fmt.Sprintf("provider:%+v/labelsize:%d\n", p, labelSize), func(b *testing.B) {
 				b.SetBytes(int64(labelSize / 8 * numLabels))
 				for i := 0; i < b.N; i++ {
+					start := time.Now()
+
 					res, err := ScryptPositions(
 						WithComputeProviderID(p.ID),
 						WithCommitment(commitment),
@@ -87,6 +89,7 @@ func BenchmarkScryptPositions(b *testing.B) {
 					r.NotNil(res)
 					r.NotNil(res.Output)
 					r.False(res.Stopped)
+					b.ReportMetric(float64(numLabels)/time.Since(start).Seconds(), "labels/s")
 				}
 			})
 		}
