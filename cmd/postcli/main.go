@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"go.uber.org/zap"
@@ -38,6 +39,7 @@ var (
 	commitmentAtxIdHex string
 	commitmentAtxId    []byte
 	reset              bool
+	skip               bool
 )
 
 func parseFlags() {
@@ -50,6 +52,7 @@ func parseFlags() {
 	flag.IntVar(&opts.ProviderID, "provider", opts.ProviderID, "compute provider id (required)")
 	flag.Uint64Var(&cfg.LabelsPerUnit, "labelsPerUnit", cfg.LabelsPerUnit, "the number of labels per unit")
 	flag.BoolVar(&reset, "reset", false, "whether to reset the datadir before starting")
+	flag.BoolVar(&skip, "skip", false, "skip init")
 	flag.StringVar(&idHex, "id", "", "miner's id (public key), in hex (will be auto-generated if not provided)")
 	flag.StringVar(&commitmentAtxIdHex, "commitmentAtxId", "", "commitment atx id, in hex (required)")
 	numUnits := flag.Uint64("numUnits", uint64(opts.NumUnits), "number of units")
@@ -151,25 +154,26 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	if !skip {
+		err = init.Initialize(ctx)
+		switch {
+		case errors.Is(err, shared.ErrInitCompleted):
+			log.Panic(err.Error())
+			return
+		case errors.Is(err, context.Canceled):
+			log.Println("cli: initialization interrupted")
+			return
+		case err != nil:
+			log.Println("cli: initialization error", err)
+			return
+		}
 
-	err = init.Initialize(ctx)
-	switch {
-	case errors.Is(err, shared.ErrInitCompleted):
-		log.Panic(err.Error())
-		return
-	case errors.Is(err, context.Canceled):
-		log.Println("cli: initialization interrupted")
-		return
-	case err != nil:
-		log.Println("cli: initialization error", err)
-		return
+		log.Println("cli: initialization completed")
 	}
-
-	log.Println("cli: initialization completed")
 
 	if genProof {
 		log.Println("cli: generating proof as a sanity test")
-
+		t1 := time.Now()
 		proof, proofMetadata, err := proving.Generate(ctx, shared.ZeroChallenge, cfg, zapLog, proving.WithDataSource(cfg, id, commitmentAtxId, opts.DataDir))
 		if err != nil {
 			log.Fatalln("proof generation error", err)
@@ -180,10 +184,13 @@ func main() {
 		}
 		defer verifier.Close()
 		if err := verifier.Verify(proof, proofMetadata, cfg, zapLog); err != nil {
+			log.Printf("cli: generating error proof use time: %v", time.Now().Sub(t1))
 			log.Fatalln("failed to verify test proof", err)
 		}
 
 		log.Println("cli: proof is valid")
+		log.Printf("cli: generating proof use time: %s", time.Now().Sub(t1))
+
 	}
 }
 
